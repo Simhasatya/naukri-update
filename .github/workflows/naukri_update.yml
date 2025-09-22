@@ -37,4 +37,8 @@ jobs:
           NAUKRI_EMAIL_3: ${{ secrets.NAUKRI_EMAIL_3 }}
           NAUKRI_PASSWORD_3: ${{ secrets.NAUKRI_PASSWORD_3 }}
         run: |
+<<<<<<< HEAD
           python naukri_update.py
+=======
+          python naukri_update.py
+>>>>>>> ba002ad (Fix YAML syntax in workflow)
