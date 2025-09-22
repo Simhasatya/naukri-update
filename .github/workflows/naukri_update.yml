@@ -38,4 +38,3 @@ jobs:
           NAUKRI_PASSWORD_3: ${{ secrets.NAUKRI_PASSWORD_3 }}
         run: |
           python naukri_update.py
-s
