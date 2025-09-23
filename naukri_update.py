@@ -9,292 +9,115 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 # -----------------------
-# Logging
+# Logging setup
 # -----------------------
-os.makedirs("logs", exist_ok=True)
+if not os.path.exists("logs"):
+    os.makedirs("logs")
+
 logging.basicConfig(
     filename="logs/naukri_update.log",
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
+    format="%(asctime)s - %(levelname)s - %(message)s"
 )
+logger = logging.getLogger(__name__)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+logger.addHandler(console_handler)
 
 # -----------------------
-# Resume Folder
+# Resume folder
 # -----------------------
-RESUME_FOLDER = "Satya_Resumes"
-RESUME_FILES = [
-    "Narasimha_Rayudu.pdf",
-    "Satya Aws & GCP.pdf",
-    "Satya5+Cloud  DevOps.pdf"
-]
+resume_folder = "Satya_Resumes"
+if not os.path.exists(resume_folder):
+    logger.error(f"Resume folder not found: {resume_folder}")
+    exit(1)
 
 # -----------------------
-# Accounts - from secrets
-# -----------------------
-accounts = [
-    {"email": os.getenv("NAUKRI_EMAIL_1"), "password": os.getenv("NAUKRI_PASSWORD_1")},
-    {"email": os.getenv("NAUKRI_EMAIL_2"), "password": os.getenv("NAUKRI_PASSWORD_2")},
-    {"email": os.getenv("NAUKRI_EMAIL_3"), "password": os.getenv("NAUKRI_PASSWORD_3")},
-]
-
-# Remove empty accounts (if any secret is missing)
-accounts = [acc for acc in accounts if acc["email"] and acc["password"]]
-
-# -----------------------
-# Selenium Options
+# Chrome options
 # -----------------------
 options = webdriver.ChromeOptions()
 options.add_argument("--headless=new")
-options.add_argument("--disable-gpu")
 options.add_argument("--no-sandbox")
 options.add_argument("--disable-dev-shm-usage")
+options.add_argument("--disable-gpu")
+options.add_argument("--window-size=1920,1080")
+options.add_argument("--disable-notifications")
 
+# -----------------------
+# One test account
+# -----------------------
+account = {
+    "email": os.environ.get("NAUKRI_EMAIL_1", "simhasatya970@gmail.com"),
+    "password": os.environ.get("NAUKRI_PASSWORD_1", "Passwords@123."),
+    "resume": "Narasimha_Rayudu.pdf"
+}
+
+# -----------------------
+# Function to update resume
+# -----------------------
 def update_resume(account):
-    logging.info(f"Updating resume for: {account['email']}")
+    resume_path = os.path.join(resume_folder, account["resume"])
+    if not os.path.exists(resume_path):
+        logger.error(f"Resume not found: {resume_path}")
+        return
+
+    logger.info(f"Starting update for {account['email']}")
+
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-    driver.set_window_size(1280, 1024)
+    wait = WebDriverWait(driver, 30)
 
     try:
         driver.get("https://www.naukri.com/nlogin/login")
-        wait = WebDriverWait(driver, 20)
+        logger.info("Opened login page")
+        time.sleep(2)
 
-        # Login
-        wait.until(EC.presence_of_element_located((By.NAME, "email"))).send_keys(account["email"])
-        driver.find_element(By.NAME, "PASSWORD").send_keys(account["password"])
-        driver.find_element(By.XPATH, "//button[@type='submit']").click()
+        # Enter username
+        username = wait.until(EC.presence_of_element_located((By.ID, "usernameField")))
+        username.clear()
+        username.send_keys(account["email"])
 
-        # Wait for redirect (homepage OR profile)
-        wait.until(
-            lambda d: "/homepage" in d.current_url or "/profile" in d.current_url,
-            "Login redirect failed"
-        )
-        driver.save_screenshot(f"logs/{account['email']}_after_login.png")
+        # Enter password
+        password = wait.until(EC.presence_of_element_located((By.ID, "passwordField")))
+        password.clear()
+        password.send_keys(account["password"])
 
-        # Go to profile
+        # Click login
+        login_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Login')]")))
+        login_btn.click()
+
+        wait.until(EC.url_contains("/homepage"))
+        logger.info("Logged in successfully")
+
+        # Navigate to profile page
         driver.get("https://www.naukri.com/mnjuser/profile")
+        wait.until(EC.url_contains("/profile"))
+        time.sleep(3)
 
-        # Upload each resume
-        for resume in RESUME_FILES:
-            resume_path = os.path.join(RESUME_FOLDER, resume)
-            if os.path.exists(resume_path):
-                try:
-                    upload = wait.until(EC.presence_of_element_located((By.XPATH, "//input[@type='file']")))
-                    upload.send_keys(os.path.abspath(resume_path))
-                    time.sleep(3)
-                    logging.info(f"Uploaded resume: {resume}")
-                except Exception as e:
-                    logging.error(f"Failed to upload {resume}: {e}")
-            else:
-                logging.error(f"Resume file not found: {resume_path}")
+        # Upload resume
+        upload_input = wait.until(EC.presence_of_element_located((By.XPATH, "//input[@type='file']")))
+        driver.execute_script("arguments[0].style.display = 'block';", upload_input)
+        upload_input.send_keys(resume_path)
+        logger.info(f"Uploaded resume: {resume_path}")
 
-        driver.save_screenshot(f"logs/{account['email']}_after_upload.png")
-        logging.info(f"Resume update completed for: {account['email']}")
+        time.sleep(4)
 
-    except Exception as e:
-        logging.error(f"Error updating {account['email']}: {e}")
+        # Save screenshot for debug
+        driver.save_screenshot("logs/success.png")
+
+        # Logout
+        driver.get("https://www.naukri.com/nlogout/logout")
+        logger.info("Logged out")
+
+    except Exception as exc:
+        logger.error(f"Error: {exc}")
+        driver.save_screenshot("logs/error.png")
     finally:
         driver.quit()
 
+# -----------------------
+# Run test
+# -----------------------
 if __name__ == "__main__":
-    for acc in accounts:
-        update_resume(acc)
-import os
-import time
-import logging
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
-
-# -----------------------
-# Logging
-# -----------------------
-os.makedirs("logs", exist_ok=True)
-logging.basicConfig(
-    filename="logs/naukri_update.log",
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
-
-# -----------------------
-# Resume Folder
-# -----------------------
-RESUME_FOLDER = "Satya_Resumes"
-RESUME_FILES = [
-    "Narasimha_Rayudu.pdf",
-    "Satya Aws & GCP.pdf",
-    "Satya5+Cloud  DevOps.pdf"
-]
-
-# -----------------------
-# Accounts - from secrets
-# -----------------------
-accounts = [
-    {"email": os.getenv("NAUKRI_EMAIL_1"), "password": os.getenv("NAUKRI_PASSWORD_1")},
-    {"email": os.getenv("NAUKRI_EMAIL_2"), "password": os.getenv("NAUKRI_PASSWORD_2")},
-    {"email": os.getenv("NAUKRI_EMAIL_3"), "password": os.getenv("NAUKRI_PASSWORD_3")},
-]
-
-# Remove empty accounts (if any secret is missing)
-accounts = [acc for acc in accounts if acc["email"] and acc["password"]]
-
-# -----------------------
-# Selenium Options
-# -----------------------
-options = webdriver.ChromeOptions()
-options.add_argument("--headless=new")
-options.add_argument("--disable-gpu")
-options.add_argument("--no-sandbox")
-options.add_argument("--disable-dev-shm-usage")
-
-def update_resume(account):
-    logging.info(f"Updating resume for: {account['email']}")
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-    driver.set_window_size(1280, 1024)
-
-    try:
-        driver.get("https://www.naukri.com/nlogin/login")
-        wait = WebDriverWait(driver, 20)
-
-        # Login
-        wait.until(EC.presence_of_element_located((By.NAME, "email"))).send_keys(account["email"])
-        driver.find_element(By.NAME, "PASSWORD").send_keys(account["password"])
-        driver.find_element(By.XPATH, "//button[@type='submit']").click()
-
-        # Wait for redirect (homepage OR profile)
-        wait.until(
-            lambda d: "/homepage" in d.current_url or "/profile" in d.current_url,
-            "Login redirect failed"
-        )
-        driver.save_screenshot(f"logs/{account['email']}_after_login.png")
-
-        # Go to profile
-        driver.get("https://www.naukri.com/mnjuser/profile")
-
-        # Upload each resume
-        for resume in RESUME_FILES:
-            resume_path = os.path.join(RESUME_FOLDER, resume)
-            if os.path.exists(resume_path):
-                try:
-                    upload = wait.until(EC.presence_of_element_located((By.XPATH, "//input[@type='file']")))
-                    upload.send_keys(os.path.abspath(resume_path))
-                    time.sleep(3)
-                    logging.info(f"Uploaded resume: {resume}")
-                except Exception as e:
-                    logging.error(f"Failed to upload {resume}: {e}")
-            else:
-                logging.error(f"Resume file not found: {resume_path}")
-
-        driver.save_screenshot(f"logs/{account['email']}_after_upload.png")
-        logging.info(f"Resume update completed for: {account['email']}")
-
-    except Exception as e:
-        logging.error(f"Error updating {account['email']}: {e}")
-    finally:
-        driver.quit()
-
-if __name__ == "__main__":
-    for acc in accounts:
-        update_resume(acc)
-import os
-import time
-import logging
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
-
-# -----------------------
-# Logging
-# -----------------------
-os.makedirs("logs", exist_ok=True)
-logging.basicConfig(
-    filename="logs/naukri_update.log",
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
-
-# -----------------------
-# Resume Folder
-# -----------------------
-RESUME_FOLDER = "Satya_Resumes"
-RESUME_FILES = [
-    "Narasimha_Rayudu.pdf",
-    "Satya Aws & GCP.pdf",
-    "Satya5+Cloud  DevOps.pdf"
-]
-
-# -----------------------
-# Accounts - from secrets
-# -----------------------
-accounts = [
-    {"email": os.getenv("NAUKRI_EMAIL_1"), "password": os.getenv("NAUKRI_PASSWORD_1")},
-    {"email": os.getenv("NAUKRI_EMAIL_2"), "password": os.getenv("NAUKRI_PASSWORD_2")},
-    {"email": os.getenv("NAUKRI_EMAIL_3"), "password": os.getenv("NAUKRI_PASSWORD_3")},
-]
-
-# Remove empty accounts (if any secret is missing)
-accounts = [acc for acc in accounts if acc["email"] and acc["password"]]
-
-# -----------------------
-# Selenium Options
-# -----------------------
-options = webdriver.ChromeOptions()
-options.add_argument("--headless=new")
-options.add_argument("--disable-gpu")
-options.add_argument("--no-sandbox")
-options.add_argument("--disable-dev-shm-usage")
-
-def update_resume(account):
-    logging.info(f"Updating resume for: {account['email']}")
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-    driver.set_window_size(1280, 1024)
-
-    try:
-        driver.get("https://www.naukri.com/nlogin/login")
-        wait = WebDriverWait(driver, 20)
-
-        # Login
-        wait.until(EC.presence_of_element_located((By.NAME, "email"))).send_keys(account["email"])
-        driver.find_element(By.NAME, "PASSWORD").send_keys(account["password"])
-        driver.find_element(By.XPATH, "//button[@type='submit']").click()
-
-        # Wait for redirect (homepage OR profile)
-        wait.until(
-            lambda d: "/homepage" in d.current_url or "/profile" in d.current_url,
-            "Login redirect failed"
-        )
-        driver.save_screenshot(f"logs/{account['email']}_after_login.png")
-
-        # Go to profile
-        driver.get("https://www.naukri.com/mnjuser/profile")
-
-        # Upload each resume
-        for resume in RESUME_FILES:
-            resume_path = os.path.join(RESUME_FOLDER, resume)
-            if os.path.exists(resume_path):
-                try:
-                    upload = wait.until(EC.presence_of_element_located((By.XPATH, "//input[@type='file']")))
-                    upload.send_keys(os.path.abspath(resume_path))
-                    time.sleep(3)
-                    logging.info(f"Uploaded resume: {resume}")
-                except Exception as e:
-                    logging.error(f"Failed to upload {resume}: {e}")
-            else:
-                logging.error(f"Resume file not found: {resume_path}")
-
-        driver.save_screenshot(f"logs/{account['email']}_after_upload.png")
-        logging.info(f"Resume update completed for: {account['email']}")
-
-    except Exception as e:
-        logging.error(f"Error updating {account['email']}: {e}")
-    finally:
-        driver.quit()
-
-if __name__ == "__main__":
-    for acc in accounts:
-        update_resume(acc)
+    update_resume(account)
+    logger.info("Test finished")
