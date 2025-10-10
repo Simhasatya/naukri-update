@@ -36,11 +36,12 @@ jobs:
       - name: Run Naukri update script
         run: python3 naukri_update.py
 
-      # Optional debug step to capture screenshots or HTML if needed
       - name: Upload screenshots (for debugging)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: screenshots
+          # Only upload files ending with "_error_*.png" (safe names)
           path: |
-            *_error.png
+            *_error_*.png
+
