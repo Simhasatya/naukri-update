@@ -43,5 +43,4 @@ jobs:
         with:
           name: screenshots
           path: |
-            *.png
-            *.html
+            *_error.png
