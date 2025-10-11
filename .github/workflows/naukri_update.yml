@@ -31,12 +31,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install selenium webdriver-manager selenium-stealth
 
+      - name: Install Xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
       - name: Decode cookies
         run: |
           echo "$NAUKRI_COOKIES" | tr -d '\r\n' | base64 --decode > cookies.pkl
 
-      - name: Run Naukri update script
-        run: python3 naukri_update.py
+      - name: Run Naukri update script with virtual display
+        run: xvfb-run -a python3 naukri_update.py
 
       - name: Upload screenshots (for debugging)
         if: always()
