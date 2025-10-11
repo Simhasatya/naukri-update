@@ -3,13 +3,11 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium_stealth import stealth
 from webdriver_manager.chrome import ChromeDriverManager
-import pickle
+from selenium_stealth import stealth
+import time
 import os
 import re
-import time
-import base64
 
 # ==============================
 # Resume folder
@@ -22,10 +20,11 @@ resume_folder = "Satya_Resumes"
 os.makedirs("screenshots", exist_ok=True)
 
 # ==============================
-# Chrome setup (stealth mode)
+# Chrome setup (visible mode)
 # ==============================
 options = webdriver.ChromeOptions()
-options.add_argument("--headless=new")  # headless mode for GitHub Actions
+# Remove headless so you can see Chrome
+# options.add_argument("--headless=new")  # Commented out
 options.add_argument("--no-sandbox")
 options.add_argument("--disable-dev-shm-usage")
 options.add_argument("--window-size=1920,1080")
@@ -38,35 +37,28 @@ options.add_argument(
 )
 
 # ==============================
-# Accounts list
+# Accounts list with dedicated resumes
 # ==============================
 accounts = [
     {
         "email": os.environ.get("NAUKRI_EMAIL_1"),
+        "password": os.environ.get("NAUKRI_PASSWORD_1"),
         "resume": "Narasimha_Rayudu.pdf"
     },
     {
         "email": os.environ.get("NAUKRI_EMAIL_2"),
+        "password": os.environ.get("NAUKRI_PASSWORD_2"),
         "resume": "Satya Aws & GCP.pdf"
     },
     {
         "email": os.environ.get("NAUKRI_EMAIL_3"),
+        "password": os.environ.get("NAUKRI_PASSWORD_3"),
         "resume": "Satya5+Cloud  DevOps.pdf"
     }
 ]
 
 def sanitize_filename(name):
     return re.sub(r'[^a-zA-Z0-9_-]', '_', name)
-
-def load_cookies(driver, cookie_secret):
-    # Decode Base64 from GitHub secret
-    cookies_bytes = base64.b64decode(cookie_secret)
-    cookies = pickle.loads(cookies_bytes)
-    for cookie in cookies:
-        cookie.pop("expiry", None)  # prevent expired cookie errors
-        driver.add_cookie(cookie)
-    driver.get("https://www.naukri.com/")  # refresh after adding cookies
-    time.sleep(5)
 
 def update_resume(account):
     resume_path = os.path.join(resume_folder, account["resume"])
@@ -75,8 +67,9 @@ def update_resume(account):
         return
 
     print(f"\n🚀 Starting update for {account['email']} with resume {account['resume']}")
+
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-    wait = WebDriverWait(driver, 30)
+    wait = WebDriverWait(driver, 60)
 
     # Apply stealth mode to mask Selenium
     stealth(
@@ -90,26 +83,39 @@ def update_resume(account):
     )
 
     try:
-        # Load cookies from secret
-        cookie_secret = os.environ.get("NAUKRI_COOKIES")
-        if not cookie_secret:
-            raise Exception("NAUKRI_COOKIES secret not found!")
-        load_cookies(driver, cookie_secret)
+        # Navigate to login page
+        driver.get("https://www.naukri.com/nlogin/login")
+        time.sleep(5)  # wait to see page
 
-        # Navigate to profile page via link to avoid HTTP2 error
-        profile_link = wait.until(EC.element_to_be_clickable(
-            (By.XPATH, "//a[contains(@href,'/mnjuser/profile')]")
-        ))
-        profile_link.click()
+        # Username
+        username = wait.until(EC.presence_of_element_located((By.ID, "usernameField")))
+        username.send_keys(account["email"])
+
+        # Password
+        password = wait.until(EC.presence_of_element_located((By.ID, "passwordField")))
+        password.send_keys(account["password"])
+
+        # Login button
+        login_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Login')]")))
+        login_btn.click()
+
+        # Wait for dashboard
+        input("🔹 If OTP is requested, please complete login manually and press Enter here once on dashboard...")
+
+        print("✅ Logged in successfully.")
+
+        # Navigate to profile page
+        driver.get("https://www.naukri.com/mnjuser/profile")
         wait.until(EC.url_contains("/profile"))
         print("✅ Profile page loaded.")
+        time.sleep(5)  # wait to see page fully
 
         # Upload resume
         upload_input = wait.until(EC.presence_of_element_located((By.XPATH, "//input[@type='file']")))
         driver.execute_script("arguments[0].style.display = 'block';", upload_input)
         upload_input.send_keys(resume_path)
         print(f"✅ Resume uploaded successfully for {account['email']}")
-        time.sleep(5)
+        time.sleep(5)  # wait to confirm upload
 
         # Logout
         driver.get("https://www.naukri.com/nlogout/logout")
