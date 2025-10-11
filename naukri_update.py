@@ -87,15 +87,20 @@ def update_resume(account):
         driver.get("https://www.naukri.com/nlogin/login")
         time.sleep(5)  # wait to see page
 
-        # Username
+        # Username field
         username = wait.until(EC.presence_of_element_located((By.ID, "usernameField")))
+        username.click()
+        username.clear()
         username.send_keys(account["email"])
 
-        # Password
+        # Password field
         password = wait.until(EC.presence_of_element_located((By.ID, "passwordField")))
+        time.sleep(2)  # wait for rendering
+        password.click()
+        password.clear()
         password.send_keys(account["password"])
 
-        # Login button
+        # Click Login
         login_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Login')]")))
         login_btn.click()
 
