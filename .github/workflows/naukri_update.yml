@@ -12,10 +12,10 @@ jobs:
   update-naukri:
     runs-on: ubuntu-latest
     env:
+      NAUKRI_COOKIES: ${{ secrets.NAUKRI_COOKIES }}
       NAUKRI_EMAIL_1: ${{ secrets.NAUKRI_EMAIL_1 }}
       NAUKRI_EMAIL_2: ${{ secrets.NAUKRI_EMAIL_2 }}
       NAUKRI_EMAIL_3: ${{ secrets.NAUKRI_EMAIL_3 }}
-      NAUKRI_COOKIES: ${{ secrets.NAUKRI_COOKIES }}
 
     steps:
       - name: Checkout repository
@@ -29,13 +29,14 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install selenium selenium-stealth
+          pip install selenium webdriver-manager selenium-stealth
 
-      - name: Decode cookies file
-        run: echo "$NAUKRI_COOKIES" | base64 --decode > cookies.pkl
+      - name: Decode cookies
+        run: |
+          echo "$NAUKRI_COOKIES" | tr -d '\r\n' | base64 --decode > cookies.pkl
 
       - name: Run Naukri update script
-        run: python naukri_update.py
+        run: python3 naukri_update.py
 
       - name: Upload screenshots (for debugging)
         if: always()
