@@ -4,6 +4,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium_stealth import stealth
 import time
 import os
 import re
@@ -19,13 +20,20 @@ resume_folder = "Satya_Resumes"
 os.makedirs("screenshots", exist_ok=True)
 
 # ==============================
-# Chrome setup
+# Chrome setup (stealth mode)
 # ==============================
 options = webdriver.ChromeOptions()
-options.add_argument("--headless")  # run headless in GitHub Actions
+options.add_argument("--headless=new")  # headless mode for GitHub Actions
 options.add_argument("--no-sandbox")
 options.add_argument("--disable-dev-shm-usage")
 options.add_argument("--window-size=1920,1080")
+options.add_argument("--disable-blink-features=AutomationControlled")
+options.add_argument("--disable-gpu")
+options.add_argument(
+    "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/119.0.6045.123 Safari/537.36"
+)
 
 # ==============================
 # Accounts list with dedicated resumes
@@ -62,10 +70,21 @@ def update_resume(account):
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     wait = WebDriverWait(driver, 30)
 
+    # Apply stealth mode to mask Selenium
+    stealth(
+        driver,
+        languages=["en-US", "en"],
+        vendor="Google Inc.",
+        platform="Win32",
+        webgl_vendor="Intel Inc.",
+        renderer="Intel Iris OpenGL Engine",
+        fix_hairline=True,
+    )
+
     try:
         # Navigate to login page
         driver.get("https://www.naukri.com/nlogin/login")
-        time.sleep(3)
+        time.sleep(5)
 
         # Username
         username = wait.until(EC.presence_of_element_located((By.ID, "usernameField")))
@@ -104,7 +123,6 @@ def update_resume(account):
 
     except Exception as e:
         print(f"❌ Error for {account['email']}: {e}")
-        # Save screenshot on error
         safe_email = sanitize_filename(account['email'])
         driver.save_screenshot(f"screenshots/{safe_email}_error.png")
         print(f"📸 Screenshot saved: screenshots/{safe_email}_error.png")
