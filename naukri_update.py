@@ -53,23 +53,23 @@ try:
 
     logging.info("🔑 Logging into Naukri account...")
     driver.find_element(By.NAME, "email").send_keys(EMAIL)
-    driver.find_element(By.NAME, "PASSWORD").send_keys(PASSWORD)
+    driver.find_element(By.NAME, "password").send_keys(PASSWORD)  # ✅ fixed here
     driver.find_element(By.XPATH, "//button[text()='Login']").click()
 
     # Wait after login for homepage to load
     logging.info("⌛ Waiting for homepage to load...")
-    time.sleep(15)
+    time.sleep(20)  # increased for stability
 
     # Go to profile page
     logging.info("🧭 Navigating to profile page...")
     driver.get("https://www.naukri.com/mnjuser/profile")
 
     # Wait for profile page to load
-    time.sleep(10)
+    time.sleep(15)
 
     # Upload resume
     logging.info("📂 Uploading new resume: %s", RESUME_PATH)
-    upload_button = WebDriverWait(driver, 20).until(
+    upload_button = WebDriverWait(driver, 25).until(
         EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
     )
     upload_button.send_keys(RESUME_PATH)
