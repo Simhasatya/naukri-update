@@ -9,86 +9,91 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium_stealth import stealth
 
-# -------------------- Logging Setup --------------------
+# Logging setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# -------------------- Resume Setup --------------------
-RESUME_FOLDER = "./Satya_Resumes"  # relative path in repo
-RESUME_FILES = [
+# Folder containing resumes
+RESUME_FOLDER = r"C:\Users\ASUS\Desktop\naukri_update\Satya_Resumes"
+# List all resume files here
+RESUMES = [
     "Narasimha_Rayudu.pdf",
     "Satya Aws & GCP.pdf",
-    "Satya5+Cloud DevOps.pdf"
+    "Satya5+Cloud  DevOps.pdf"
 ]
 
-# Pick the first resume for update (you can rotate this if needed)
-RESUME_FILE = RESUME_FILES[0]
-RESUME_PATH = os.path.abspath(os.path.join(RESUME_FOLDER, RESUME_FILE))
+# Get credentials from environment variables
+EMAILS = [os.getenv(f"NAUKRI_EMAIL_{i+1}") for i in range(3)]
+PASSWORDS = [os.getenv(f"NAUKRI_PASSWORD_{i+1}") for i in range(3)]
 
-if not os.path.exists(RESUME_PATH):
-    logging.error(f"❌ Resume file not found: {RESUME_PATH}")
-    exit(1)
+# Validate credentials
+for idx, (email, password) in enumerate(zip(EMAILS, PASSWORDS), start=1):
+    if not email or not password:
+        logging.error(f"❌ Credentials not found for account {idx}. Please set NAUKRI_EMAIL_{idx} and NAUKRI_PASSWORD_{idx}")
+        exit(1)
 
-# -------------------- Credentials Setup --------------------
-EMAIL = os.getenv("NAUKRI_EMAIL_1")
-PASSWORD = os.getenv("NAUKRI_PASSWORD_1")
+def update_resume(email, password, resume_file):
+    resume_path = os.path.join(RESUME_FOLDER, resume_file)
+    if not os.path.exists(resume_path):
+        logging.error(f"❌ Resume file not found: {resume_path}")
+        return
 
-if not EMAIL or not PASSWORD:
-    logging.error("❌ Naukri credentials not found in environment variables.")
-    exit(1)
+    logging.info(f"🚀 Starting update for {email} with resume {resume_file}")
 
-# -------------------- Chrome Setup --------------------
-chrome_options = Options()
-chrome_options.add_argument("--start-maximized")
-chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-chrome_options.add_argument("--no-sandbox")
-chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options = Options()
+    chrome_options.add_argument("--headless=new")  # Headless mode for CI/GitHub Actions
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--window-size=1920,1080")
+    # Unique user-data-dir to avoid session conflicts
+    chrome_options.add_argument(f"--user-data-dir=/tmp/naukri_profile_{int(time.time())}")
 
-service = Service()
-driver = webdriver.Chrome(service=service, options=chrome_options)
+    service = Service()
+    driver = webdriver.Chrome(service=service, options=chrome_options)
 
-# Stealth to avoid detection
-stealth(driver,
-        languages=["en-US", "en"],
-        vendor="Google Inc.",
-        platform="Win32",
-        webgl_vendor="Intel Inc.",
-        renderer="Intel Iris OpenGL Engine",
-        fix_hairline=True)
+    # Stealth to avoid detection
+    stealth(driver,
+            languages=["en-US", "en"],
+            vendor="Google Inc.",
+            platform="Win32",
+            webgl_vendor="Intel Inc.",
+            renderer="Intel Iris OpenGL Engine",
+            fix_hairline=True)
 
-try:
-    logging.info("🌐 Opening Naukri login page...")
-    driver.get("https://www.naukri.com/nlogin/login")
+    try:
+        logging.info("🌐 Opening Naukri login page...")
+        driver.get("https://www.naukri.com/nlogin/login")
 
-    # Wait for login page to load
-    WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.NAME, "email")))
+        WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.NAME, "email")))
+        logging.info("🔑 Logging in...")
+        driver.find_element(By.NAME, "email").send_keys(email)
+        driver.find_element(By.NAME, "PASSWORD").send_keys(password)
+        driver.find_element(By.XPATH, "//button[text()='Login']").click()
 
-    logging.info("🔑 Logging in...")
-    driver.find_element(By.NAME, "email").send_keys(EMAIL)
-    driver.find_element(By.NAME, "PASSWORD").send_keys(PASSWORD)
-    driver.find_element(By.XPATH, "//button[text()='Login']").click()
+        logging.info("⌛ Waiting for homepage to load...")
+        time.sleep(10)
 
-    # Wait for homepage to load
-    logging.info("⌛ Waiting for homepage to load...")
-    time.sleep(15)
+        logging.info("🧭 Navigating to profile page...")
+        driver.get("https://www.naukri.com/mnjuser/profile")
+        time.sleep(5)
 
-    # Navigate to profile page
-    logging.info("🧭 Navigating to profile page...")
-    driver.get("https://www.naukri.com/mnjuser/profile")
-    time.sleep(10)
+        logging.info(f"📂 Uploading resume: {resume_path}")
+        upload_button = WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
+        )
+        upload_button.send_keys(resume_path)
 
-    # Upload resume
-    logging.info(f"📂 Uploading resume: {RESUME_PATH}")
-    upload_button = WebDriverWait(driver, 20).until(
-        EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
-    )
-    upload_button.send_keys(RESUME_PATH)
+        logging.info("✅ Resume uploaded successfully. Waiting to ensure completion...")
+        time.sleep(10)
 
-    logging.info("✅ Resume uploaded successfully. Waiting for confirmation...")
-    time.sleep(10)
+        logging.info("🎉 Resume update complete!")
 
-    logging.info("🎉 Resume update complete! Closing browser.")
-    driver.quit()
+    except Exception as e:
+        logging.error(f"⚠️ Error during resume update for {email}: {e}")
+    finally:
+        driver.quit()
 
-except Exception as e:
-    logging.error(f"⚠️ Error during resume update: {e}")
-    driver.quit()
+# Iterate through accounts and resumes
+for email, password, resume_file in zip(EMAILS, PASSWORDS, RESUMES):
+    update_resume(email, password, resume_file)
