@@ -1,94 +1,118 @@
 import os
+import re
 import time
 import logging
+import pickle
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium_stealth import stealth
 
-# -----------------------
-# Logging setup
-# -----------------------
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-# -----------------------
-# Resume path
-# -----------------------
-RESUME_FOLDER = r"C:\Users\ASUS\Desktop\naukri_update\Satya_Resumes"  # Update if needed
-RESUME_FILE = "Satya5+Cloud  DevOps.pdf"  # Choose resume to upload
-RESUME_PATH = os.path.join(RESUME_FOLDER, RESUME_FILE)
+# -------------------------------
+# SETUP
+# -------------------------------
+RESUME_DIR = r"C:\Users\ASUS\Desktop\naukri_update\Satya_Resumes"
+RESUMES = {
+    "simhasatya970@gmail.com": os.path.join(RESUME_DIR, "Narasimha_Rayudu.pdf"),
+    "satyacloud59@gmail.com": os.path.join(RESUME_DIR, "Satya Aws & GCP.pdf"),
+    "satyadevops@gmail.com": os.path.join(RESUME_DIR, "Satya5+Cloud  DevOps.pdf"),
+}
 
-# -----------------------
-# Credentials from environment variables
-# -----------------------
-EMAIL = os.getenv("NAUKRI_EMAIL_1")
-PASSWORD = os.getenv("NAUKRI_PASSWORD_1")
+accounts = [
+    {"email": os.getenv("NAUKRI_EMAIL_1"), "password": os.getenv("NAUKRI_PASSWORD_1")},
+    {"email": os.getenv("NAUKRI_EMAIL_2"), "password": os.getenv("NAUKRI_PASSWORD_2")},
+]
 
-if not EMAIL or not PASSWORD:
-    logging.error("❌ Naukri credentials not found in environment variables.")
-    exit(1)
+# Remove empty accounts
+accounts = [acc for acc in accounts if acc["email"] and acc["password"]]
 
-# -----------------------
-# Chrome setup for headless CI
-# -----------------------
-chrome_options = Options()
-chrome_options.add_argument("--headless=new")  # headless mode for GitHub Actions
-chrome_options.add_argument("--no-sandbox")
-chrome_options.add_argument("--disable-dev-shm-usage")
-chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-chrome_options.add_argument("--window-size=1920,1080")
-chrome_options.add_argument(f"--user-data-dir=/tmp/chrome_userdata_{int(time.time())}")
 
-service = Service()
-driver = webdriver.Chrome(service=service, options=chrome_options)
+def sanitize_filename(name):
+    """Clean email for filename use."""
+    return re.sub(r"[^a-zA-Z0-9_-]", "_", name)
 
-# Stealth to avoid detection
-stealth(driver,
-        languages=["en-US", "en"],
-        vendor="Google Inc.",
-        platform="Win32",
-        webgl_vendor="Intel Inc.",
-        renderer="Intel Iris OpenGL Engine",
-        fix_hairline=True)
 
-# -----------------------
-# Resume upload automation
-# -----------------------
-try:
-    logging.info("🌐 Opening Naukri login page...")
-    driver.get("https://www.naukri.com/nlogin/login")
+def setup_driver():
+    """Initialize Chrome WebDriver in normal (visible) mode."""
+    options = Options()
+    options.add_argument("--start-maximized")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
 
-    # Wait for login fields
-    WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.NAME, "email")))
+    driver = webdriver.Chrome(options=options)
+    stealth(driver,
+            languages=["en-US", "en"],
+            vendor="Google Inc.",
+            platform="Win32",
+            webgl_vendor="Intel Inc.",
+            renderer="Intel Iris OpenGL Engine",
+            fix_hairline=True)
+    return driver
 
-    logging.info("🔑 Logging into Naukri account...")
-    driver.find_element(By.NAME, "email").send_keys(EMAIL)
-    driver.find_element(By.NAME, "PASSWORD").send_keys(PASSWORD)
-    driver.find_element(By.XPATH, "//button[text()='Login']").click()
 
-    # Wait for homepage to load
-    logging.info("⌛ Waiting for homepage to load...")
-    time.sleep(10)
+def update_resume(account):
+    """Logs in and uploads resume on Naukri."""
+    email = account["email"]
+    password = account["password"]
+    resume_path = RESUMES.get(email)
 
-    # Navigate to profile page
-    logging.info("🧭 Navigating to profile page...")
-    driver.get("https://www.naukri.com/mnjuser/profile")
-    time.sleep(5)
+    if not os.path.exists(resume_path):
+        logging.error(f"❌ Resume not found: {resume_path}")
+        return
 
-    # Upload resume
-    logging.info("📂 Uploading new resume: %s", RESUME_PATH)
-    upload_button = WebDriverWait(driver, 20).until(
-        EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
-    )
-    upload_button.send_keys(RESUME_PATH)
-    time.sleep(10)  # Wait to ensure upload completes
+    logging.info(f"\n🚀 Starting update for {email} with resume {os.path.basename(resume_path)}")
 
-    logging.info("✅ Resume uploaded successfully!")
-    driver.quit()
+    driver = setup_driver()
 
-except Exception as e:
-    logging.error(f"⚠️ Error during resume update: {e}")
-    driver.quit()
+    try:
+        driver.get("https://www.naukri.com/nlogin/login")
+
+        # Login
+        WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.ID, "usernameField"))).send_keys(email)
+        driver.find_element(By.ID, "passwordField").send_keys(password)
+        driver.find_element(By.XPATH, "//button[contains(text(),'Login')]").click()
+
+        logging.info("🔹 If OTP is requested, please complete login manually and press Enter here once on dashboard...")
+        input()  # Wait for manual OTP if required
+
+        # Wait for profile to load
+        WebDriverWait(driver, 60).until(EC.url_contains("naukri.com/mnjuser"))
+        logging.info("✅ Logged in successfully.")
+
+        driver.get("https://www.naukri.com/mnjuser/profile")
+        WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        logging.info("✅ Profile page loaded.")
+
+        # Upload resume
+        upload_input = WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.XPATH, "//input[@type='file' and @id='attachCV']"))
+        )
+        upload_input.send_keys(resume_path)
+        logging.info(f"✅ Resume uploaded successfully: {resume_path}")
+
+        time.sleep(5)  # Wait for upload confirmation
+        logging.info("✅ Resume update complete!")
+
+    except Exception as e:
+        safe_email = sanitize_filename(email)
+        screenshot_path = f"screenshots/{safe_email}_error.png"
+        os.makedirs("screenshots", exist_ok=True)
+        driver.save_screenshot(screenshot_path)
+        logging.error(f"❌ Error for {email}: {e}")
+        logging.info(f"📸 Screenshot saved: {screenshot_path}")
+
+    finally:
+        time.sleep(3)
+        driver.quit()
+
+
+if __name__ == "__main__":
+    for acc in accounts:
+        update_resume(acc)
